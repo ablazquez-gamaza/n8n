@@ -78,7 +78,7 @@ const mainMenuItems = computed(() => [
 	{
 		id: 'key-account-dashboard',
 		icon: 'layout',
-		label: 'Key Account Dashboard',
+		label: 'Key Account (SharePoint)',
 		position: 'bottom',
 		route: { to: { name: VIEWS.KEY_ACCOUNT_DASHBOARD } },
 	},
