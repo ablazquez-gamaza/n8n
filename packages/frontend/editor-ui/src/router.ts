@@ -53,6 +53,7 @@ const SetupWorkflowFromTemplateView = async () =>
 	await import('@/views/SetupWorkflowFromTemplateView/SetupWorkflowFromTemplateView.vue');
 const TemplatesSearchView = async () => await import('@/views/TemplatesSearchView.vue');
 const VariablesView = async () => await import('@/views/VariablesView.vue');
+const KeyAccountDashboardView = async () => await import('@/views/KeyAccountDashboardView.vue');
 const SettingsUsageAndPlan = async () => await import('./views/SettingsUsageAndPlan.vue');
 const SettingsSso = async () => await import('./views/SettingsSso.vue');
 const SignoutView = async () => await import('@/views/SignoutView.vue');
@@ -85,6 +86,18 @@ export const routes: RouteRecordRaw[] = [
 	{
 		path: '/',
 		redirect: '/home/workflows',
+		meta: {
+			middleware: ['authenticated'],
+		},
+	},
+	{
+		path: '/key-account/dashboard',
+		name: VIEWS.KEY_ACCOUNT_DASHBOARD,
+		components: {
+			default: KeyAccountDashboardView,
+			header: MainHeader,
+			sidebar: MainSidebar,
+		},
 		meta: {
 			middleware: ['authenticated'],
 		},
