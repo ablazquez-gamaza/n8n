@@ -76,6 +76,13 @@ const mainMenuItems = computed(() => [
 		available: settingsStore.isCloudDeployment && hasPermission(['instanceOwner']),
 	},
 	{
+		id: 'key-account-dashboard',
+		icon: 'layout',
+		label: 'Key Account Dashboard',
+		position: 'bottom',
+		route: { to: { name: VIEWS.KEY_ACCOUNT_DASHBOARD } },
+	},
+	{
 		// Link to in-app templates, available if custom templates are enabled
 		id: 'templates',
 		icon: 'box-open',

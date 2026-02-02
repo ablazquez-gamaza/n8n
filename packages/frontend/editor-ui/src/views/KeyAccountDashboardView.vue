@@ -1,130 +1,299 @@
 <script setup lang="ts">
 import { useDocumentTitle } from '@/composables/useDocumentTitle';
-import { onMounted } from 'vue';
-import { N8nButton, N8nHeading, N8nText } from '@n8n/design-system';
+import { computed, onMounted, ref } from 'vue';
+import { N8nButton, N8nHeading, N8nInput, N8nInputLabel, N8nText } from '@n8n/design-system';
 
-const kpiCards = [
-	{ label: 'SLA medio', value: '98.6%', trend: '+0.8% vs. mes anterior' },
-	{ label: 'NPS promedio', value: '62', trend: '+4 puntos' },
-	{ label: 'Tiempo medio de respuesta', value: '1h 42m', trend: '-12% semanal' },
-	{ label: 'Contratos en riesgo', value: '3', trend: 'Revisión prioritaria' },
-];
+type KpiCard = {
+	id: number;
+	label: string;
+	value: string;
+	trend: string;
+};
 
-const clients = [
-	{
-		name: 'Telefónica Norte',
-		segment: 'Telco',
-		sla: '99.1%',
-		nps: 58,
-		status: 'Activo',
-		nextReview: '12/11/2024',
-	},
-	{
-		name: 'Retail Nova',
-		segment: 'Retail',
-		sla: '97.4%',
-		nps: 63,
-		status: 'En seguimiento',
-		nextReview: '25/10/2024',
-	},
-	{
-		name: 'Finanzas Atlas',
-		segment: 'Banca',
-		sla: '98.9%',
-		nps: 69,
-		status: 'Activo',
-		nextReview: '03/12/2024',
-	},
-	{
-		name: 'Energía Solaris',
-		segment: 'Utilities',
-		sla: '96.8%',
-		nps: 52,
-		status: 'Plan de mejora',
-		nextReview: '18/10/2024',
-	},
-];
+type ClientRow = {
+	id: number;
+	name: string;
+	segment: string;
+	sla: string;
+	nps: string;
+	status: string;
+	nextReview: string;
+};
 
-const contracts = [
-	{
-		client: 'Telefónica Norte',
-		renewal: '31/01/2025',
-		value: '€420k',
-		sla: '99%',
-		status: 'Renovación preparada',
-	},
-	{
-		client: 'Retail Nova',
-		renewal: '15/12/2024',
-		value: '€275k',
-		sla: '97%',
-		status: 'Negociación',
-	},
-	{
-		client: 'Energía Solaris',
-		renewal: '05/11/2024',
-		value: '€190k',
-		sla: '96%',
-		status: 'Alerta de servicio',
-	},
-];
+type ContractRow = {
+	id: number;
+	client: string;
+	renewal: string;
+	value: string;
+	sla: string;
+	status: string;
+};
 
-const pliegos = [
-	{
-		client: 'Finanzas Atlas',
-		compliance: '92%',
-		nextAudit: '21/10/2024',
-		owner: 'Equipo Calidad',
-	},
-	{
-		client: 'Telefónica Norte',
-		compliance: '96%',
-		nextAudit: '14/11/2024',
-		owner: 'Operaciones',
-	},
-	{
-		client: 'Retail Nova',
-		compliance: '88%',
-		nextAudit: '09/10/2024',
-		owner: 'Legal & Compliance',
-	},
-];
+type PliegoRow = {
+	id: number;
+	client: string;
+	compliance: string;
+	nextAudit: string;
+	owner: string;
+};
 
-const tasks = [
-	{
-		title: 'Revisión SLA mensual con Telefónica Norte',
-		priority: 'Alta',
-		due: '08/10/2024',
-		owner: 'Key Account',
-		status: 'Pendiente',
+type TaskRow = {
+	id: number;
+	title: string;
+	priority: string;
+	due: string;
+	owner: string;
+	status: string;
+};
+
+type SharePointConfig = {
+	siteUrl: string;
+	lists: {
+		clients: string;
+		contracts: string;
+		pliegos: string;
+		tasks: string;
+		kpis: string;
+	};
+};
+
+const DEFAULT_CONFIG: SharePointConfig = {
+	siteUrl: 'https://cpgservinform.sharepoint.com/sites/PlandeAccinSAE',
+	lists: {
+		clients: 'Clientes',
+		contracts: 'Contratos',
+		pliegos: 'Pliegos',
+		tasks: 'Tareas',
+		kpis: 'KPIs',
 	},
-	{
-		title: 'Actualizar pliego de condiciones Retail Nova',
-		priority: 'Media',
-		due: '10/10/2024',
-		owner: 'Legal',
-		status: 'En progreso',
-	},
-	{
-		title: 'Preparar QBR Finanzas Atlas',
-		priority: 'Alta',
-		due: '17/10/2024',
-		owner: 'Operaciones',
-		status: 'Pendiente',
-	},
-	{
-		title: 'Plan de mejora Energía Solaris',
-		priority: 'Crítica',
-		due: '05/10/2024',
-		owner: 'Calidad',
-		status: 'Bloqueada',
-	},
-];
+};
+
+const CONFIG_KEY = 'kam.sharepoint.config';
+const TOKEN_KEY = 'kam.sharepoint.token';
+
+const config = ref<SharePointConfig>({ ...DEFAULT_CONFIG });
+const accessToken = ref('');
+const isLoading = ref(false);
+const errorMessage = ref('');
+const lastSync = ref<string | null>(null);
+
+const kpiCards = ref<KpiCard[]>([]);
+const clients = ref<ClientRow[]>([]);
+const contracts = ref<ContractRow[]>([]);
+const pliegos = ref<PliegoRow[]>([]);
+const tasks = ref<TaskRow[]>([]);
+
+const newClientName = ref('');
+const newTaskTitle = ref('');
+
+const hasToken = computed(() => accessToken.value.trim().length > 0);
 
 const documentTitle = useDocumentTitle();
 
+const getField = (item: Record<string, string>, fields: string[], fallback = ''): string => {
+	for (const field of fields) {
+		const value = item[field];
+		if (value !== undefined && value !== null && value !== '') {
+			return String(value);
+		}
+	}
+	return fallback;
+};
+
+const normalizeDate = (value: string) => {
+	if (!value) {
+		return '';
+	}
+
+	try {
+		return new Date(value).toLocaleDateString('es-ES');
+	} catch (error) {
+		return value;
+	}
+};
+
+const getListEndpoint = (listName: string) =>
+	`${config.value.siteUrl}/_api/web/lists/getbytitle('${encodeURIComponent(listName)}')/items`;
+
+const getHeaders = () => ({
+	Accept: 'application/json;odata=nometadata',
+	Authorization: `Bearer ${accessToken.value}`,
+});
+
+const getRequestDigest = async () => {
+	const response = await fetch(`${config.value.siteUrl}/_api/contextinfo`, {
+		method: 'POST',
+		headers: {
+			...getHeaders(),
+			'Content-Type': 'application/json;odata=nometadata',
+		},
+	});
+
+	if (!response.ok) {
+		throw new Error('No se pudo obtener el digest de SharePoint.');
+	}
+
+	const data = await response.json();
+	return data.FormDigestValue as string;
+};
+
+const fetchListItems = async (listName: string) => {
+	const response = await fetch(getListEndpoint(listName), {
+		headers: getHeaders(),
+	});
+
+	if (!response.ok) {
+		throw new Error(`No se pudo leer la lista "${listName}".`);
+	}
+
+	const data = await response.json();
+	return data.value ?? [];
+};
+
+const createListItem = async (listName: string, payload: Record<string, string>) => {
+	const digest = await getRequestDigest();
+	const response = await fetch(getListEndpoint(listName), {
+		method: 'POST',
+		headers: {
+			...getHeaders(),
+			'Content-Type': 'application/json;odata=nometadata',
+			'X-RequestDigest': digest,
+		},
+		body: JSON.stringify(payload),
+	});
+
+	if (!response.ok) {
+		throw new Error(`No se pudo crear el registro en "${listName}".`);
+	}
+};
+
+const loadData = async () => {
+	if (!hasToken.value) {
+		errorMessage.value = 'Introduce un token de acceso válido de SharePoint.';
+		return;
+	}
+
+	isLoading.value = true;
+	errorMessage.value = '';
+
+	try {
+		const [kpiItems, clientItems, contractItems, pliegoItems, taskItems] = await Promise.all([
+			fetchListItems(config.value.lists.kpis),
+			fetchListItems(config.value.lists.clients),
+			fetchListItems(config.value.lists.contracts),
+			fetchListItems(config.value.lists.pliegos),
+			fetchListItems(config.value.lists.tasks),
+		]);
+
+		kpiCards.value = kpiItems.map((item: Record<string, string>) => ({
+			id: item.Id,
+			label: getField(item, ['Title', 'KPI', 'Indicador']),
+			value: getField(item, ['Value', 'Valor']),
+			trend: getField(item, ['Trend', 'Tendencia']),
+		}));
+
+		clients.value = clientItems.map((item: Record<string, string>) => ({
+			id: item.Id,
+			name: getField(item, ['Title', 'Cliente', 'Name']),
+			segment: getField(item, ['Segment', 'Segmento']),
+			sla: getField(item, ['SLA', 'Sla']),
+			nps: getField(item, ['NPS', 'Nps']),
+			status: getField(item, ['Status', 'Estado']),
+			nextReview: normalizeDate(
+				getField(item, ['NextReview', 'ProximaRevision', 'ProximaRevisión']),
+			),
+		}));
+
+		contracts.value = contractItems.map((item: Record<string, string>) => ({
+			id: item.Id,
+			client: getField(item, ['Client', 'Cliente', 'Title']),
+			renewal: normalizeDate(getField(item, ['Renewal', 'Renovacion', 'Renovación'])),
+			value: getField(item, ['Value', 'Valor']),
+			sla: getField(item, ['SLA', 'Sla']),
+			status: getField(item, ['Status', 'Estado']),
+		}));
+
+		pliegos.value = pliegoItems.map((item: Record<string, string>) => ({
+			id: item.Id,
+			client: getField(item, ['Client', 'Cliente', 'Title']),
+			compliance: getField(item, ['Compliance', 'Cumplimiento']),
+			nextAudit: normalizeDate(
+				getField(item, ['NextAudit', 'ProximaAuditoria', 'PróximaAuditoría']),
+			),
+			owner: getField(item, ['Owner', 'Responsable']),
+		}));
+
+		tasks.value = taskItems.map((item: Record<string, string>) => ({
+			id: item.Id,
+			title: getField(item, ['Title', 'Tarea']),
+			priority: getField(item, ['Priority', 'Prioridad']),
+			due: normalizeDate(getField(item, ['Due', 'Vencimiento', 'FechaLimite'])),
+			owner: getField(item, ['Owner', 'Responsable']),
+			status: getField(item, ['Status', 'Estado']),
+		}));
+
+		lastSync.value = new Date().toLocaleString('es-ES');
+	} catch (error) {
+		errorMessage.value =
+			error instanceof Error ? error.message : 'No se pudo cargar la información de SharePoint.';
+	} finally {
+		isLoading.value = false;
+	}
+};
+
+const saveConfig = () => {
+	localStorage.setItem(CONFIG_KEY, JSON.stringify(config.value));
+	localStorage.setItem(TOKEN_KEY, accessToken.value);
+	void loadData();
+};
+
+const createClient = async () => {
+	if (!newClientName.value) {
+		return;
+	}
+
+	try {
+		await createListItem(config.value.lists.clients, {
+			Title: newClientName.value,
+		});
+		newClientName.value = '';
+		void loadData();
+	} catch (error) {
+		errorMessage.value =
+			error instanceof Error ? error.message : 'No se pudo crear el cliente en SharePoint.';
+	}
+};
+
+const createTask = async () => {
+	if (!newTaskTitle.value) {
+		return;
+	}
+
+	try {
+		await createListItem(config.value.lists.tasks, {
+			Title: newTaskTitle.value,
+		});
+		newTaskTitle.value = '';
+		void loadData();
+	} catch (error) {
+		errorMessage.value =
+			error instanceof Error ? error.message : 'No se pudo crear la tarea en SharePoint.';
+	}
+};
+
 onMounted(() => {
 	documentTitle.set('Key Account Manager | Control de clientes');
+	const savedConfig = localStorage.getItem(CONFIG_KEY);
+	const savedToken = localStorage.getItem(TOKEN_KEY);
+	if (savedConfig) {
+		config.value = { ...config.value, ...JSON.parse(savedConfig) };
+	}
+	if (savedToken) {
+		accessToken.value = savedToken;
+	}
+	if (savedToken) {
+		void loadData();
+	}
 });
 </script>
 
@@ -134,14 +303,69 @@ onMounted(() => {
 			<div>
 				<N8nHeading size="xlarge">Control integral de cuentas</N8nHeading>
 				<N8nText size="large" color="text-base">
-					BBDD unificada para KPIs, SLAs, contratos, pliegos y tareas de cada cliente.
+					BBDD unificada con SharePoint para KPIs, SLAs, contratos, pliegos y tareas por cliente.
 				</N8nText>
 			</div>
 			<div :class="$style.headerActions">
-				<N8nButton type="primary" icon="plus">Nuevo cliente</N8nButton>
-				<N8nButton type="secondary" icon="check">Crear tarea</N8nButton>
+				<N8nButton type="primary" icon="refresh" :disabled="isLoading" @click="loadData">
+					Actualizar datos
+				</N8nButton>
+				<N8nButton
+					type="secondary"
+					icon="check"
+					:disabled="!hasToken || !newTaskTitle"
+					@click="createTask"
+				>
+					Crear tarea
+				</N8nButton>
 			</div>
 		</header>
+
+		<section :class="$style.section">
+			<N8nHeading size="large">Conexión SharePoint</N8nHeading>
+			<N8nText size="small" color="text-base">
+				Configura la URL del sitio y el token de acceso. Los datos se guardan en tu navegador para
+				acceso rápido.
+			</N8nText>
+			<div :class="$style.configGrid">
+				<N8nInputLabel label="URL del sitio" color="text-dark">
+					<N8nInput v-model="config.siteUrl" type="text" placeholder="https://..." />
+				</N8nInputLabel>
+				<N8nInputLabel label="Token de acceso (Bearer)" color="text-dark">
+					<N8nInput v-model="accessToken" type="password" placeholder="Introduce el token" />
+				</N8nInputLabel>
+				<N8nInputLabel label="Lista KPI" color="text-dark">
+					<N8nInput v-model="config.lists.kpis" type="text" />
+				</N8nInputLabel>
+				<N8nInputLabel label="Lista Clientes" color="text-dark">
+					<N8nInput v-model="config.lists.clients" type="text" />
+				</N8nInputLabel>
+				<N8nInputLabel label="Lista Contratos" color="text-dark">
+					<N8nInput v-model="config.lists.contracts" type="text" />
+				</N8nInputLabel>
+				<N8nInputLabel label="Lista Pliegos" color="text-dark">
+					<N8nInput v-model="config.lists.pliegos" type="text" />
+				</N8nInputLabel>
+				<N8nInputLabel label="Lista Tareas" color="text-dark">
+					<N8nInput v-model="config.lists.tasks" type="text" />
+				</N8nInputLabel>
+			</div>
+			<div :class="$style.configActions">
+				<N8nButton type="primary" icon="save" @click="saveConfig">Guardar configuración</N8nButton>
+				<N8nText v-if="lastSync" size="small" color="text-light">
+					Última sincronización: {{ lastSync }}
+				</N8nText>
+			</div>
+			<N8nText size="small" color="text-light">
+				Listas esperadas (columnas mínimas): KPI (Title, Value, Trend), Clientes (Title, Segmento,
+				SLA, NPS, Estado, PróximaRevisión), Contratos (Cliente/Title, Renovación, Valor, SLA,
+				Estado), Pliegos (Cliente/Title, Cumplimiento, PróximaAuditoría, Responsable), Tareas
+				(Title, Prioridad, FechaLimite/Vencimiento, Responsable, Estado).
+			</N8nText>
+			<N8nText v-if="errorMessage" size="small" color="danger">
+				{{ errorMessage }}
+			</N8nText>
+		</section>
 
 		<nav :class="$style.modules">
 			<span>Dashboard</span>
@@ -153,12 +377,16 @@ onMounted(() => {
 
 		<section :class="$style.section">
 			<N8nHeading size="large">Dashboard</N8nHeading>
+			<N8nText v-if="isLoading" size="small" color="text-light">Cargando KPIs...</N8nText>
 			<div :class="$style.kpiGrid">
-				<div v-for="card in kpiCards" :key="card.label" :class="$style.kpiCard">
+				<div v-for="card in kpiCards" :key="card.id" :class="$style.kpiCard">
 					<N8nText size="small" color="text-light">{{ card.label }}</N8nText>
 					<N8nHeading size="large">{{ card.value }}</N8nHeading>
 					<N8nText size="small" color="text-base">{{ card.trend }}</N8nText>
 				</div>
+				<N8nText v-if="!isLoading && kpiCards.length === 0" size="small" color="text-light">
+					No hay KPIs cargados en la lista seleccionada.
+				</N8nText>
 			</div>
 		</section>
 
@@ -168,6 +396,21 @@ onMounted(() => {
 				<N8nText size="small" color="text-base">
 					Seguimiento operativo y comercial con KPIs críticos por cuenta.
 				</N8nText>
+				<div :class="$style.inlineForm">
+					<N8nInput
+						v-model="newClientName"
+						placeholder="Nuevo cliente (Title)"
+						:disabled="!hasToken"
+					/>
+					<N8nButton
+						type="secondary"
+						icon="plus"
+						:disabled="!newClientName || !hasToken"
+						@click="createClient"
+					>
+						Añadir
+					</N8nButton>
+				</div>
 			</div>
 			<div :class="$style.table">
 				<div :class="$style.tableRowHeader">
@@ -178,7 +421,7 @@ onMounted(() => {
 					<span>Estado</span>
 					<span>Próxima revisión</span>
 				</div>
-				<div v-for="client in clients" :key="client.name" :class="$style.tableRow">
+				<div v-for="client in clients" :key="client.id" :class="$style.tableRow">
 					<span>{{ client.name }}</span>
 					<span>{{ client.segment }}</span>
 					<span>{{ client.sla }}</span>
@@ -186,6 +429,9 @@ onMounted(() => {
 					<span>{{ client.status }}</span>
 					<span>{{ client.nextReview }}</span>
 				</div>
+				<N8nText v-if="!isLoading && clients.length === 0" size="small" color="text-light">
+					No hay clientes cargados.
+				</N8nText>
 			</div>
 		</section>
 
@@ -203,13 +449,16 @@ onMounted(() => {
 						<span>SLA</span>
 						<span>Estado</span>
 					</div>
-					<div v-for="contract in contracts" :key="contract.client" :class="$style.tableRow">
+					<div v-for="contract in contracts" :key="contract.id" :class="$style.tableRow">
 						<span>{{ contract.client }}</span>
 						<span>{{ contract.renewal }}</span>
 						<span>{{ contract.value }}</span>
 						<span>{{ contract.sla }}</span>
 						<span>{{ contract.status }}</span>
 					</div>
+					<N8nText v-if="!isLoading && contracts.length === 0" size="small" color="text-light">
+						No hay contratos cargados.
+					</N8nText>
 				</div>
 			</div>
 			<div :class="$style.card">
@@ -224,12 +473,15 @@ onMounted(() => {
 						<span>Próxima auditoría</span>
 						<span>Responsable</span>
 					</div>
-					<div v-for="pliego in pliegos" :key="pliego.client" :class="$style.tableRow">
+					<div v-for="pliego in pliegos" :key="pliego.id" :class="$style.tableRow">
 						<span>{{ pliego.client }}</span>
 						<span>{{ pliego.compliance }}</span>
 						<span>{{ pliego.nextAudit }}</span>
 						<span>{{ pliego.owner }}</span>
 					</div>
+					<N8nText v-if="!isLoading && pliegos.length === 0" size="small" color="text-light">
+						No hay pliegos cargados.
+					</N8nText>
 				</div>
 			</div>
 		</section>
@@ -240,9 +492,19 @@ onMounted(() => {
 				<N8nText size="small" color="text-base">
 					To-do operativo para coordinar equipos de cuenta.
 				</N8nText>
+				<div :class="$style.inlineForm">
+					<N8nInput
+						v-model="newTaskTitle"
+						placeholder="Nueva tarea (Title)"
+						:disabled="!hasToken"
+					/>
+					<N8nButton type="secondary" icon="plus" :disabled="!newTaskTitle" @click="createTask">
+						Añadir
+					</N8nButton>
+				</div>
 			</div>
 			<div :class="$style.taskList">
-				<div v-for="task in tasks" :key="task.title" :class="$style.taskRow">
+				<div v-for="task in tasks" :key="task.id" :class="$style.taskRow">
 					<div>
 						<N8nText size="small" color="text-light">Prioridad {{ task.priority }}</N8nText>
 						<N8nHeading size="medium">{{ task.title }}</N8nHeading>
@@ -253,6 +515,9 @@ onMounted(() => {
 						<span :class="$style.taskStatus">{{ task.status }}</span>
 					</div>
 				</div>
+				<N8nText v-if="!isLoading && tasks.length === 0" size="small" color="text-light">
+					No hay tareas cargadas.
+				</N8nText>
 			</div>
 		</section>
 	</div>
@@ -279,6 +544,29 @@ onMounted(() => {
 .headerActions {
 	display: flex;
 	gap: var(--spacing-s);
+}
+
+.configGrid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+	gap: var(--spacing-s);
+	background: var(--color-background-xlight);
+	padding: var(--spacing-m);
+	border-radius: var(--border-radius-large);
+	box-shadow: var(--box-shadow-s);
+}
+
+.configActions {
+	display: flex;
+	align-items: center;
+	gap: var(--spacing-s);
+	margin-top: var(--spacing-s);
+}
+
+.inlineForm {
+	display: flex;
+	gap: var(--spacing-s);
+	align-items: center;
 }
 
 .modules {
