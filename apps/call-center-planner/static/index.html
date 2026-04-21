@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Call Center Planner</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; background:#f5f7fb; color:#222; }
+    h1 { margin-bottom: 8px; }
+    .grid { display:grid; grid-template-columns: 1fr 1fr; gap:16px; }
+    .card { background:#fff; border-radius:10px; padding:16px; box-shadow:0 2px 10px rgba(0,0,0,.06); }
+    label { display:block; font-size:12px; margin-top:8px; }
+    input, select, button { width:100%; padding:8px; margin-top:4px; }
+    button { background:#2954ff; color:white; border:none; border-radius:6px; cursor:pointer; }
+    button:hover { opacity:.95; }
+    .metrics { display:flex; gap:20px; }
+    .metric { background:#eef2ff; padding:10px; border-radius:8px; }
+    .full { grid-column:1 / -1; }
+    table { width:100%; border-collapse: collapse; font-size:12px; }
+    td, th { border:1px solid #ddd; padding:6px; }
+  </style>
+</head>
+<body>
+  <h1>Planificador de Demanda y FTE</h1>
+  <p>Sube CSV/XLSX con columnas <b>DÍA</b> (mm/dd/aaaa), <b>FRANJA</b> (HH:MM), <b>LLAMADAS</b>.</p>
+
+  <div class="grid">
+    <div class="card">
+      <h3>1) Ingesta y previsión anual</h3>
+      <input type="file" id="fileInput" accept=".csv,.xlsx" />
+      <button id="uploadBtn">Subir y recalcular previsión</button>
+      <p id="uploadResult"></p>
+    </div>
+
+    <div class="card">
+      <h3>2) Filtros de fecha</h3>
+      <label>Desde</label><input type="date" id="startDate" />
+      <label>Hasta</label><input type="date" id="endDate" />
+      <button id="loadChartsBtn">Cargar gráficas</button>
+    </div>
+
+    <div class="card full">
+      <canvas id="demandChart" height="90"></canvas>
+    </div>
+
+    <div class="card">
+      <h3>3) Inputs de capacidad (FTE)</h3>
+      <label>%NDA objetivo</label><input id="nda" type="number" value="5" />
+      <label>%NDS objetivo</label><input id="nds" type="number" value="80" />
+      <label>NDS en X segundos</label><input id="nds_seconds" type="number" value="20" />
+      <label>AHT (segundos)</label><input id="aht" type="number" value="300" />
+      <label>% absentismo no previsto</label><input id="absentismo" type="number" value="8" />
+      <label>% descanso</label><input id="descanso" type="number" value="10" />
+      <label>% pausa visual</label><input id="pausa_visual" type="number" value="5" />
+      <label>ATA (segundos)</label><input id="ata" type="number" value="40" />
+      <label>ASA objetivo (segundos)</label><input id="asa" type="number" value="20" />
+      <label>% ocupación máxima</label><input id="occupancy" type="number" value="85" />
+      <label>Fuente</label>
+      <select id="source"><option value="forecast">Forecast</option><option value="history">Histórico</option></select>
+      <button id="calcFteBtn">Calcular FTE</button>
+    </div>
+
+    <div class="card">
+      <h3>Resultado FTE</h3>
+      <div class="metrics">
+        <div class="metric">FTE pico: <b id="peakFte">-</b></div>
+        <div class="metric">FTE medio: <b id="avgFte">-</b></div>
+      </div>
+      <h4>Detalle (primeras 50 franjas)</h4>
+      <table>
+        <thead><tr><th>Día</th><th>Franja</th><th>Llamadas</th><th>FTE</th></tr></thead>
+        <tbody id="fteTable"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
